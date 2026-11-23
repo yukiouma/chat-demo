@@ -1,0 +1,7 @@
+# ts-rs writes the generated TypeScript into `src/generated/`, so the browser
+# and the Rust code agree on one definition of the wire format.
+#
+# The path is relative to the workspace root; ts-rs resolves it against this
+# absolute path, and `export_to` attributes are relative to it.
+[env]
+TS_RS_EXPORT_DIR = { value = "src/generated", relative = true }

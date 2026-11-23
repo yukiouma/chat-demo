@@ -1,0 +1,28 @@
+[package]
+name = "apis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.9"
+tokio = { workspace = true }
+sqlx = { version = "0.9", default-features = false, features = [
+    "postgres",
+    "runtime-tokio",
+    "macros",
+    "migrate",
+    "chrono",
+    "json",
+    "uuid",
+] }
+dotenv = "0.15.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = "1"
+base64 = "0.21"
+protocol = { path = "../crates/protocol", package = "crf-protocol" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
