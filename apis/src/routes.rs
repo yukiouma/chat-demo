@@ -4,8 +4,8 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use protocol::{
-    Conversation, CreateConversation, ForkConversation, Message, MessageRole, Model,
-    NewMessage, UpdateConversation, User,
+    Conversation, CreateConversation, ForkConversation, Message, MessagePart, MessageRole, Model,
+    NewMessage, UpdateConversation, UpdateInstructions, User,
 };
 use uuid::Uuid;
 
@@ -143,6 +143,80 @@ pub async fn list_messages(
     Ok(Json(rows.into_iter().map(MessageRow::into_message).collect()))
 }
 
+/// `PUT /api/conversations/:id/instructions`
+///
+/// The conversation's Instructions: one message of its own, written by the
+/// application. Setting them again replaces what is there; there is never
+/// more than one.
+///
+/// It sits at the head of the conversation, so every fork inherits it.
+pub async fn set_instructions(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<Uuid>,
+    Json(body): Json<UpdateInstructions>,
+) -> Result<Json<Message>, ApiError> {
+    require_conversation(&state, user.0.id, conversation_id).await?;
+
+    let instructions = body.instructions.trim().to_owned();
+
+    let parts = serde_json::to_value(&[MessagePart::Text {
+        text: instructions.clone(),
+    }])
+    .map_err(ApiError::internal)?;
+
+    let mut tx = state.pool.begin().await.map_err(ApiError::internal)?;
+
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM messages WHERE conversation_id = $1 AND role = 'system'",
+    )
+    .bind(conversation_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(ApiError::internal)?;
+
+    let row = match existing {
+        Some(id) => {
+            sqlx::query_as::<_, MessageRow>(
+                "UPDATE messages SET parts = $2, content = $3 \
+                 WHERE id = $1 \
+                 RETURNING id, conversation_id, role, seq, parts, content, status, created_at",
+            )
+            .bind(id)
+            .bind(&parts)
+            .bind(&instructions)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(ApiError::internal)?
+        }
+        None => {
+            sqlx::query_as::<_, MessageRow>(
+                "INSERT INTO messages (id, conversation_id, role, seq, parts, content, status) \
+                 VALUES ($1, $2, $3, 0, $4, $5, 'sent') \
+                 RETURNING id, conversation_id, role, seq, parts, content, status, created_at",
+            )
+            .bind(Uuid::new_v4())
+            .bind(conversation_id)
+            .bind(role_to_str(MessageRole::System))
+            .bind(&parts)
+            .bind(&instructions)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(ApiError::internal)?
+        }
+    };
+
+    sqlx::query("UPDATE conversations SET updated_at = now() WHERE id = $1")
+        .bind(conversation_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(ApiError::internal)?;
+
+    tx.commit().await.map_err(ApiError::internal)?;
+
+    Ok(Json(row.into_message()))
+}
+
 /// `POST /api/conversations/:id/messages`
 ///
 /// Called twice per turn: once with the user's message, once with the
@@ -170,6 +244,14 @@ pub async fn append_messages(
     let mut title_from: Option<String> = None;
 
     for new in body {
+        // The Instructions have an endpoint of their own: there is one of
+        // them, and it belongs at the head of the conversation.
+        if new.role == MessageRole::System {
+            return Err(ApiError::BadRequest(
+                "use PUT /api/conversations/:id/instructions".to_owned(),
+            ));
+        }
+
         seq += 1;
 
         let parts = serde_json::to_value(&new.parts).map_err(ApiError::internal)?;

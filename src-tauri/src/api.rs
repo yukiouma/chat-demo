@@ -4,7 +4,7 @@
 
 use protocol::{
     Conversation, CreateConversation, ForkConversation, Message, Model, NewMessage,
-    UpdateConversation, User,
+    UpdateConversation, UpdateInstructions, User,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -174,6 +174,23 @@ impl ApiClient {
         self.send(
             self.http
                 .post(self.url(&format!("/api/conversations/{id}/messages")))
+                .json(&body),
+        )
+        .await
+    }
+
+    /// Sets the conversation's Instructions.
+    pub async fn set_instructions(
+        &self,
+        id: Uuid,
+        instructions: &str,
+    ) -> Result<Message, ApiError> {
+        let body = Self::json(&UpdateInstructions {
+            instructions: instructions.to_owned(),
+        })?;
+        self.send(
+            self.http
+                .put(self.url(&format!("/api/conversations/{id}/instructions")))
                 .json(&body),
         )
         .await

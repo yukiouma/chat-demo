@@ -75,7 +75,7 @@ content: string, status: MessageStatus, created_at: string, };
  */
 export type MessagePart = { "type": "text", text: string, } | { "type": "reasoning", text: string, } | { "type": "tool", call_id: string, name: string, input: JsonValue, output: JsonValue | null, status: ToolStatus, };
 
-export type MessageRole = "user" | "assistant";
+export type MessageRole = "user" | "assistant" | "system";
 
 export type MessageStatus = "sent" | "error" | "cancelled";
 
@@ -107,6 +107,15 @@ export type ToolStatus = "input_streaming" | "input_available" | "approval_reque
  * Body of `PATCH /api/conversations/:id`.
  */
 export type UpdateConversation = { model: string, };
+
+/**
+ * Body of `PUT /api/conversations/:id/instructions`.
+ */
+export type UpdateInstructions = { 
+/**
+ * The conversation's Instructions. Empty means no instructions at all.
+ */
+instructions: string, };
 
 /**
  * A person who can sign in.

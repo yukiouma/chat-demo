@@ -11,7 +11,9 @@ use uuid::Uuid;
 
 use crate::tools::CurrentTime;
 
-const PREAMBLE: &str = "You are a helpful local assistant running on the user's machine. \
+/// The instructions the assistant runs with when a conversation has none of
+/// its own.
+pub const PREAMBLE: &str = "You are a helpful local assistant running on the user's machine. \
      Use the tools you have when they would help, and answer in plain prose.";
 
 /// How many times the model may call a tool before it must answer.
@@ -177,13 +179,15 @@ pub struct Turn {
 
 /// Runs one turn, reporting what happens as it happens.
 ///
-/// `history` is everything before the prompt. Whatever the model produced is
-/// returned, even when the turn fails part way through.
+/// `history` is everything before the prompt. `instructions` is the
+/// conversation's own Instructions, or `None` when it has none. Whatever the
+/// model produced is returned, even when the turn fails part way through.
 pub async fn run_turn(
     conversation_id: Uuid,
     model: &str,
     history: Vec<RigMessage>,
     prompt: RigMessage,
+    instructions: Option<String>,
     mut emit: impl FnMut(Chunk),
 ) -> Turn {
     // `from_env` honours OLLAMA_API_BASE_URL, so the daemon does not have to
@@ -203,12 +207,16 @@ pub async fn run_turn(
         }
     };
 
-    let agent = AgentBuilder::new(provider.native_completion(model))
-        .preamble(PREAMBLE)
+    let base = AgentBuilder::new(provider.native_completion(model))
         .tool(CurrentTime)
         .default_max_turns(MAX_TURNS)
-        .reasoning(Reasoning::Effort(Effort::Medium))
-        .build();
+        .reasoning(Reasoning::Effort(Effort::Medium));
+
+    let agent = match preamble(instructions) {
+        Some(text) => base.preamble(text),
+        None => base.without_preamble(),
+    }
+    .build();
 
     let mut stream = agent.prompt(prompt).history(history).stream();
 
@@ -331,6 +339,19 @@ pub async fn run_turn(
     }
 
     Turn { messages, failure }
+}
+
+/// The preamble a turn runs with.
+///
+/// `None` means the conversation has no Instructions of its own, so the
+/// built-in ones apply. Instructions that are there but empty mean the
+/// assistant runs with none at all.
+fn preamble(instructions: Option<String>) -> Option<String> {
+    match instructions {
+        Some(text) if text.trim().is_empty() => None,
+        Some(text) => Some(text),
+        None => Some(PREAMBLE.to_owned()),
+    }
 }
 
 /// Returns the message being built, starting one if there is none.

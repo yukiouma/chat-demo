@@ -485,3 +485,153 @@ async fn does_not_show_another_user_a_conversation(pool: PgPool) {
         "and it is not in their list either"
     );
 }
+
+// -- instructions -----------------------------------------------------------
+
+#[sqlx::test]
+async fn sets_the_conversations_instructions(pool: PgPool) {
+    let (conversation_id, _) = seed_conversation(&pool).await;
+
+    let (status, body) = call(
+        &pool,
+        request(
+            "PUT",
+            &format!("/api/conversations/{conversation_id}/instructions"),
+            Some(json!({ "instructions": "Answer in one word." })),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["role"], json!("system"));
+    assert_eq!(body["content"], json!("Answer in one word."));
+
+    let (_, messages) = call(
+        &pool,
+        request(
+            "GET",
+            &format!("/api/conversations/{conversation_id}/messages"),
+            None,
+        ),
+    )
+    .await;
+
+    let messages = messages.as_array().unwrap();
+    assert_eq!(messages[0]["role"], json!("system"), "they come first");
+    assert_eq!(messages[0]["seq"], json!(0));
+}
+
+#[sqlx::test]
+async fn setting_the_instructions_again_replaces_them(pool: PgPool) {
+    let (conversation_id, _) = seed_conversation(&pool).await;
+    let url = format!("/api/conversations/{conversation_id}/instructions");
+
+    call(
+        &pool,
+        request("PUT", &url, Some(json!({ "instructions": "First." }))),
+    )
+    .await;
+    let (_, body) = call(
+        &pool,
+        request("PUT", &url, Some(json!({ "instructions": "Second." }))),
+    )
+    .await;
+
+    assert_eq!(body["content"], json!("Second."));
+
+    let (_, messages) = call(
+        &pool,
+        request(
+            "GET",
+            &format!("/api/conversations/{conversation_id}/messages"),
+            None,
+        ),
+    )
+    .await;
+
+    let messages = messages.as_array().unwrap();
+    let instructions: Vec<_> = messages
+        .iter()
+        .filter(|message| message["role"] == json!("system"))
+        .collect();
+    assert_eq!(instructions.len(), 1, "there is only ever one");
+}
+
+#[sqlx::test]
+async fn empty_instructions_are_empty_and_not_unset(pool: PgPool) {
+    let (conversation_id, _) = seed_conversation(&pool).await;
+
+    let (status, body) = call(
+        &pool,
+        request(
+            "PUT",
+            &format!("/api/conversations/{conversation_id}/instructions"),
+            Some(json!({ "instructions": "   " })),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["content"], json!(""), "empty is not the same as unset");
+}
+
+#[sqlx::test]
+async fn a_fork_inherits_the_instructions(pool: PgPool) {
+    let (conversation_id, message_ids) = seed_conversation(&pool).await;
+
+    call(
+        &pool,
+        request(
+            "PUT",
+            &format!("/api/conversations/{conversation_id}/instructions"),
+            Some(json!({ "instructions": "Be brief." })),
+        ),
+    )
+    .await;
+
+    let (_, body) = call(
+        &pool,
+        request(
+            "POST",
+            &format!("/api/conversations/{conversation_id}/fork"),
+            Some(json!({ "from_message_id": message_ids[0] })),
+        ),
+    )
+    .await;
+
+    let fork_id = body["id"].as_str().unwrap();
+    let (_, messages) = call(
+        &pool,
+        request(
+            "GET",
+            &format!("/api/conversations/{fork_id}/messages"),
+            None,
+        ),
+    )
+    .await;
+
+    let messages = messages.as_array().unwrap();
+    assert_eq!(messages[0]["role"], json!("system"));
+    assert_eq!(messages[0]["content"], json!("Be brief."));
+}
+
+#[sqlx::test]
+async fn refuses_to_append_a_message_of_the_system_role(pool: PgPool) {
+    let (conversation_id, _) = seed_conversation(&pool).await;
+
+    let (status, _) = call(
+        &pool,
+        request(
+            "POST",
+            &format!("/api/conversations/{conversation_id}/messages"),
+            Some(json!([{
+                "id": Uuid::new_v4(),
+                "role": "system",
+                "parts": [{ "type": "text", "text": "Sneaky." }]
+            }])),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

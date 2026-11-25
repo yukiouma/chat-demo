@@ -54,6 +54,9 @@ pub struct HistoryMessage {
 pub enum MessageRole {
     User,
     Assistant,
+    /// The conversation's Instructions: written by the application, not said
+    /// by anyone, and never shown in the transcript.
+    System,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]

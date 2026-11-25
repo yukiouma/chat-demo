@@ -34,6 +34,7 @@ pub fn run() {
             commands::fork_conversation,
             commands::load_messages,
             commands::update_conversation,
+            commands::set_instructions,
             commands::send_message,
         ])
         .run(tauri::generate_context!())

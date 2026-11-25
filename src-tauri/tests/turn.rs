@@ -24,6 +24,7 @@ async fn streams_the_answer_thinking_and_the_tool() {
         rig::completion::Message::user(
             "What time is it right now? Use the current_time tool to find out, then tell me.",
         ),
+        None,
         |chunk| seen.push(chunk),
     )
     .await;

@@ -11,6 +11,8 @@ import { toHistoryMessage } from "./messages";
 export interface AdapterContext {
   conversationId: string;
   model: string;
+  /** The conversation's Instructions; null when it has none of its own. */
+  systemPrompt: string | null;
 }
 
 /** Tracks the part of the message being written. */
@@ -197,7 +199,7 @@ function createStream(
 export function createAdapter(context: () => AdapterContext): ChatAdapter {
   return {
     async sendMessage({ messages }) {
-      const { conversationId, model } = context();
+      const { conversationId, model, systemPrompt } = context();
 
       // The store already holds the message that was just sent, so it is
       // the last one; everything before it is the history.
@@ -214,6 +216,7 @@ export function createAdapter(context: () => AdapterContext): ChatAdapter {
           message: toHistoryMessage(sent),
           history,
           model,
+          systemPrompt,
           onChunk,
         }),
       );

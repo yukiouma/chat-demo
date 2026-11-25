@@ -3,6 +3,10 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   List,
   ListItemButton,
   ListItemText,
@@ -17,7 +21,7 @@ import type { ChatMessage } from "@mui/x-chat/headless";
 
 import { api } from "./api";
 import { createAdapter } from "./chat/adapter";
-import { ASSISTANT, USER, toChatMessage } from "./chat/messages";
+import { ASSISTANT, USER, splitInstructions, toChatMessage } from "./chat/messages";
 import type {
   Conversation,
   Message,
@@ -119,6 +123,10 @@ function Chat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [model, setModel] = useState<string>("");
   const [problem, setProblem] = useState<string | null>(null);
+  /** The conversation's Instructions; null when it has none of its own. */
+  const [instructions, setInstructions] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const refreshConversations = useCallback(async () => {
     setConversations(await api.listConversations());
@@ -161,6 +169,7 @@ function Chat({
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
+      setInstructions(null);
       return;
     }
 
@@ -169,7 +178,10 @@ function Chat({
     api
       .loadMessages(activeId)
       .then((stored: Message[]) => {
-        if (!cancelled) setMessages(stored.map(toChatMessage));
+        if (cancelled) return;
+        const split = splitInstructions(stored);
+        setInstructions(split.instructions);
+        setMessages(split.messages.map(toChatMessage));
       })
       .catch((err) => {
         if (!cancelled) setProblem(String(err));
@@ -180,9 +192,18 @@ function Chat({
     };
   }, [activeId]);
 
-  // The adapter needs the current conversation and model, which change.
-  const context = useRef({ conversationId: activeId ?? "", model });
-  context.current = { conversationId: activeId ?? "", model };
+  // The adapter needs the current conversation, model and instructions, which
+  // change.
+  const context = useRef({
+    conversationId: activeId ?? "",
+    model,
+    systemPrompt: instructions,
+  });
+  context.current = {
+    conversationId: activeId ?? "",
+    model,
+    systemPrompt: instructions,
+  };
 
   const adapter = useMemo(() => createAdapter(() => context.current), []);
 
@@ -192,6 +213,9 @@ function Chat({
       await refreshConversations();
       setActiveId(created.id);
       setMessages([]);
+      // The new conversation has the built-in instructions until they are
+      // loaded; the previous conversation's must not leak into it.
+      setInstructions(null);
     } catch (err) {
       setProblem(String(err));
     }
@@ -205,6 +229,7 @@ function Chat({
       if (activeId === id) {
         setActiveId(remaining[0]?.id ?? null);
         setMessages([]);
+        setInstructions(null);
       }
     } catch (err) {
       setProblem(String(err));
@@ -218,6 +243,7 @@ function Chat({
       await refreshConversations();
       setActiveId(forked.id);
       setMessages([]);
+      setInstructions(null);
       setModel(forked.model_name);
     } catch (err) {
       setProblem(String(err));
@@ -229,6 +255,22 @@ function Chat({
     if (!activeId) return;
     try {
       await api.updateConversation(activeId, name);
+    } catch (err) {
+      setProblem(String(err));
+    }
+  }
+
+  function editInstructions() {
+    setDraft(instructions ?? "");
+    setEditing(true);
+  }
+
+  async function saveInstructions() {
+    if (!activeId) return;
+    try {
+      const saved = await api.setInstructions(activeId, draft);
+      setInstructions(saved.content);
+      setEditing(false);
     } catch (err) {
       setProblem(String(err));
     }
@@ -310,6 +352,10 @@ function Chat({
           ))}
         </Select>
 
+        <Button size="small" onClick={editInstructions} disabled={!activeId}>
+          Instructions
+        </Button>
+
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Typography variant="caption">{account.username}</Typography>
           <Button size="small" onClick={onSignOut}>
@@ -339,6 +385,71 @@ function Chat({
           sx={{ flex: 1, minWidth: 0 }}
         />
       </Box>
+
+      <Dialog open={editing} onClose={() => setEditing(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Instructions</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Instructions"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            multiline
+            minRows={4}
+            fullWidth
+            autoFocus
+            helperText="What the assistant runs with. Leave it empty for no instructions at all."
+          />
+
+          <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>
+            What the model receives
+          </Typography>
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: 1,
+              bgcolor: "action.hover",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            <Typography variant="body2">{effectiveInstructions(draft, instructions)}</Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditing(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => void saveInstructions()}
+            disabled={draft === (instructions ?? "")}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
+}
+
+/**
+ * What the model will be given, once the draft is saved.
+ *
+ * A conversation that has no Instructions of its own falls back to the
+ * built-in ones, so an untouched empty field does not mean "no
+ * instructions" — it means the default is still in charge.
+ */
+function effectiveInstructions(draft: string, stored: string | null): string {
+  const unchanged = draft === (stored ?? "");
+
+  if (unchanged) {
+    if (stored === null) {
+      return "The assistant's built-in default instructions.";
+    }
+    if (stored === "") {
+      return "Nothing — the assistant will run with no instructions.";
+    }
+    return stored;
+  }
+
+  return draft.trim() === ""
+    ? "Nothing — the assistant will run with no instructions."
+    : draft;
 }

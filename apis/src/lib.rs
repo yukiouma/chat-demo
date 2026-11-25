@@ -10,7 +10,7 @@ pub mod error;
 pub mod routes;
 pub mod state;
 
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use state::AppState;
 
@@ -31,6 +31,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/conversations/{id}/messages",
             get(routes::list_messages).post(routes::append_messages),
+        )
+        .route(
+            "/api/conversations/{id}/instructions",
+            put(routes::set_instructions),
         )
         .route("/api/conversations/{id}/fork", post(routes::fork_conversation))
         .with_state(state)

@@ -40,3 +40,11 @@ pub struct ForkConversation {
 pub struct UpdateConversation {
     pub model: String,
 }
+
+/// Body of `PUT /api/conversations/:id/instructions`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "protocol.ts")]
+pub struct UpdateInstructions {
+    /// The conversation's Instructions. Empty means no instructions at all.
+    pub instructions: String,
+}

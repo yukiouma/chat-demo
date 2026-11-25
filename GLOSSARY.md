@@ -18,6 +18,10 @@ _Avoid_: Auth session, Token
 The non-human participant in a Conversation, which produces Messages in response to the User's. Backed by a Model, but distinct from it.
 _Avoid_: Bot, AI, LLM, Model
 
+**Application**:
+The desktop app the User operates. It authors a Conversation's Instructions, and writes the outcome of each Tool Invocation.
+_Avoid_: Assistant, System, Backend
+
 ### Conversations
 
 **Conversation**:
@@ -25,8 +29,12 @@ A single chat thread belonging to one User — the unit that is created, switche
 _Avoid_: Session, Chat, Thread
 
 **Message**:
-One entry in a Conversation, authored by the User or by the assistant, made of an ordered list of Message Parts. The assistant's Message covers a whole exchange: when the model calls a tool, the call, its result and the answer that followed are all Parts of one Message.
+One entry in a Conversation, made of an ordered list of Message Parts. Its role names the participant it belongs to, but the Parts within it are not all written by that participant. The assistant's Message covers a whole exchange: when the model calls a tool, the call, its result and the answer that followed are all Parts of one Message.
 _Avoid_: Chat message, Turn (see below)
+
+**Instructions**:
+A Message, authored by the Application, holding the Conversation's standing configuration for the model. It is not speech, and it is never shown in the transcript. The User may set it, and may leave it out entirely.
+_Avoid_: System Prompt, Prompt, Preamble, Directive
 
 **Message Part**:
 A typed fragment of a Message. The kinds are Text Part, Reasoning Part, and Tool Invocation.
@@ -41,7 +49,7 @@ A Message Part holding the model's chain-of-thought, shown separately from the a
 _Avoid_: Thinking, Chain of thought, Scratchpad
 
 **Tool Invocation**:
-A Message Part recording the model's request to run a named tool, the arguments it chose, and the outcome.
+A Message Part recording the model's request to run a named tool and the arguments it chose, together with the outcome. The model writes the request; the Application writes the outcome.
 _Avoid_: Tool call, Function call, Command
 
 **Turn**:

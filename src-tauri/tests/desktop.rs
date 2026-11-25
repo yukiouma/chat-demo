@@ -62,6 +62,7 @@ async fn a_turn_is_streamed_and_stored() {
         question.clone(),
         Vec::new(),
         "qwen3:32b".into(),
+        None,
     )
     .await
     .expect("the turn succeeds");

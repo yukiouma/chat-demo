@@ -94,13 +94,21 @@ pub fn role_to_str(role: MessageRole) -> &'static str {
     match role {
         MessageRole::User => "user",
         MessageRole::Assistant => "assistant",
+        MessageRole::System => "system",
     }
 }
 
+/// The role a stored row carries.
+///
+/// A role we do not recognise is a bug, not a reason to guess: reading an
+/// Instructions message as an assistant message would put it in the
+/// transcript. The database's check constraint makes this unreachable.
 fn role_from_str(role: &str) -> MessageRole {
     match role {
         "user" => MessageRole::User,
-        _ => MessageRole::Assistant,
+        "assistant" => MessageRole::Assistant,
+        "system" => MessageRole::System,
+        other => panic!("unknown role '{other}'"),
     }
 }
 

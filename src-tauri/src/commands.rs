@@ -84,9 +84,32 @@ pub async fn create_conversation(
     state: State<'_, AppState>,
     model: String,
 ) -> Result<Conversation, String> {
+    let client = client(&state).await?;
+    let conversation = client
+        .create_conversation(&model)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    // A new conversation starts with the built-in instructions. If this
+    // fails the conversation is still usable: a turn with no instructions of
+    // its own falls back to the built-in ones anyway.
+    let _ = client
+        .set_instructions(conversation.id, agent::PREAMBLE)
+        .await;
+
+    Ok(conversation)
+}
+
+/// Sets the conversation's Instructions.
+#[tauri::command]
+pub async fn set_instructions(
+    state: State<'_, AppState>,
+    conversation_id: Uuid,
+    instructions: String,
+) -> Result<Message, String> {
     client(&state)
         .await?
-        .create_conversation(&model)
+        .set_instructions(conversation_id, &instructions)
         .await
         .map_err(|err| err.to_string())
 }
@@ -150,10 +173,20 @@ pub async fn send_message(
     message: HistoryMessage,
     history: Vec<HistoryMessage>,
     model: String,
+    system_prompt: Option<String>,
 ) -> Result<(), String> {
     let client = client(&state).await?;
 
-    run_turn(&client, &channel, conversation_id, message, history, model).await
+    run_turn(
+        &client,
+        &channel,
+        conversation_id,
+        message,
+        history,
+        model,
+        system_prompt,
+    )
+    .await
 }
 
 /// The work of a turn, without the command wrapper.
@@ -164,6 +197,7 @@ pub async fn run_turn(
     message: HistoryMessage,
     history: Vec<HistoryMessage>,
     model: String,
+    system_prompt: Option<String>,
 ) -> Result<(), String> {
     // The question is stored first, so it survives a crash mid-answer.
     client
@@ -182,10 +216,17 @@ pub async fn run_turn(
     let rig_history = history::to_rig_messages(&history);
     let prompt = rig::completion::Message::user(protocol::Message::plain_text(&message.parts));
 
-    let turn = agent::run_turn(conversation_id, &model, rig_history, prompt, |chunk| {
-        // The browser may have gone away; that is not the model's problem.
-        let _ = channel.send(chunk);
-    })
+    let turn = agent::run_turn(
+        conversation_id,
+        &model,
+        rig_history,
+        prompt,
+        system_prompt,
+        |chunk| {
+            // The browser may have gone away; that is not the model's problem.
+            let _ = channel.send(chunk);
+        },
+    )
     .await;
 
     if !turn.messages.is_empty() {

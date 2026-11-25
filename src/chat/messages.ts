@@ -35,14 +35,46 @@ const TOOL_STATES: Record<ToolStatus, string> = {
 
 /** Our message, as the UI library wants it. */
 export function toChatMessage(message: Message): ChatMessage {
+  // The Instructions are split off before this is called: they are not part
+  // of the dialogue and have no place in the transcript.
+  const isUser = message.role === "user";
+
   return {
     id: message.id,
-    role: message.role === "user" ? "user" : "assistant",
+    role: isUser ? "user" : "assistant",
     parts: message.parts.map(toChatPart),
     status: "sent",
     createdAt: message.created_at,
-    author: message.role === "user" ? USER : ASSISTANT,
+    author: isUser ? USER : ASSISTANT,
   };
+}
+
+/**
+ * The conversation's Instructions, and the messages that make up the
+ * dialogue.
+ *
+ * The Instructions are stored as a message, but they are written by the
+ * application, said by no one, and never shown in the transcript. A
+ * conversation that has none of its own is `null` here, which is not the
+ * same as one whose Instructions are empty.
+ */
+export function splitInstructions(stored: Message[]): {
+  instructions: string | null;
+  messages: Message[];
+} {
+  const instructions = stored.find((message) => message.role === "system");
+
+  return {
+    instructions: instructions ? plainText(instructions) : null,
+    messages: stored.filter((message) => message.role !== "system"),
+  };
+}
+
+/** A message's text, without its parts that are not text. */
+function plainText(message: Message): string {
+  return message.parts
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("");
 }
 
 function toChatPart(part: MessagePart): ChatMessagePart {

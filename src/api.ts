@@ -38,6 +38,9 @@ export const api = {
   updateConversation: (conversationId: string, model: string) =>
     invoke<Conversation>("update_conversation", { conversationId, model }),
 
+  setInstructions: (conversationId: string, instructions: string) =>
+    invoke<Message>("set_instructions", { conversationId, instructions }),
+
   /**
    * Runs a turn. The chunks arrive on the channel as they happen.
    */
@@ -46,6 +49,8 @@ export const api = {
     message: HistoryMessage;
     history: HistoryMessage[];
     model: string;
+    /** The conversation's Instructions; null when it has none of its own. */
+    systemPrompt: string | null;
     onChunk: (chunk: Chunk) => void;
   }) => {
     const channel = new Channel<Chunk>();
@@ -57,6 +62,7 @@ export const api = {
       message: args.message,
       history: args.history,
       model: args.model,
+      systemPrompt: args.systemPrompt,
     });
   },
 };
